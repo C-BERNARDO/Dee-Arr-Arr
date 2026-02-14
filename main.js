@@ -999,21 +999,34 @@ function showAgentCollection() {
         } else {
             // Filter data by selected month
             const monthAgentsData = allAgentsDataByMonth[selectedMonth] || {};
+            
+            // Filter out agents with 0 PTP AND 0 Claim Paid in this month
+            const filteredMonthAgentsData = {};
+            Object.keys(monthAgentsData).forEach(agentName => {
+                const agent = monthAgentsData[agentName];
+                if (agent.ptpCount > 0 || agent.claimPaidCount > 0) {
+                    filteredMonthAgentsData[agentName] = agent;
+                }
+            });
+            
             const monthAgentsDataByDate = {};
             
             // Filter date data for selected month
             Object.keys(allAgentsDataByDate).forEach(agentName => {
-                monthAgentsDataByDate[agentName] = {};
-                Object.keys(allAgentsDataByDate[agentName]).forEach(date => {
-                    const d = new Date(date);
-                    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                    if (monthKey === selectedMonth) {
-                        monthAgentsDataByDate[agentName][date] = allAgentsDataByDate[agentName][date];
-                    }
-                });
+                // Only include agents that have collections in this month
+                if (filteredMonthAgentsData[agentName]) {
+                    monthAgentsDataByDate[agentName] = {};
+                    Object.keys(allAgentsDataByDate[agentName]).forEach(date => {
+                        const d = new Date(date);
+                        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                        if (monthKey === selectedMonth) {
+                            monthAgentsDataByDate[agentName][date] = allAgentsDataByDate[agentName][date];
+                        }
+                    });
+                }
             });
             
-            renderAgentData(monthAgentsData, monthAgentsDataByDate, selectedAgent);
+            renderAgentData(filteredMonthAgentsData, monthAgentsDataByDate, selectedAgent);
         }
     };
     
@@ -1026,20 +1039,33 @@ function showAgentCollection() {
             renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent);
         } else {
             const monthAgentsData = allAgentsDataByMonth[selectedMonth] || {};
+            
+            // Filter out agents with 0 PTP AND 0 Claim Paid in this month
+            const filteredMonthAgentsData = {};
+            Object.keys(monthAgentsData).forEach(agentName => {
+                const agent = monthAgentsData[agentName];
+                if (agent.ptpCount > 0 || agent.claimPaidCount > 0) {
+                    filteredMonthAgentsData[agentName] = agent;
+                }
+            });
+            
             const monthAgentsDataByDate = {};
             
             Object.keys(allAgentsDataByDate).forEach(agentName => {
-                monthAgentsDataByDate[agentName] = {};
-                Object.keys(allAgentsDataByDate[agentName]).forEach(date => {
-                    const d = new Date(date);
-                    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                    if (monthKey === selectedMonth) {
-                        monthAgentsDataByDate[agentName][date] = allAgentsDataByDate[agentName][date];
-                    }
-                });
+                // Only include agents that have collections in this month
+                if (filteredMonthAgentsData[agentName]) {
+                    monthAgentsDataByDate[agentName] = {};
+                    Object.keys(allAgentsDataByDate[agentName]).forEach(date => {
+                        const d = new Date(date);
+                        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                        if (monthKey === selectedMonth) {
+                            monthAgentsDataByDate[agentName][date] = allAgentsDataByDate[agentName][date];
+                        }
+                    });
+                }
             });
             
-            renderAgentData(monthAgentsData, monthAgentsDataByDate, selectedAgent);
+            renderAgentData(filteredMonthAgentsData, monthAgentsDataByDate, selectedAgent);
         }
     };
     

@@ -1338,3 +1338,68 @@ header h1 {
     border-radius: 2px;
     padding: 16px;
 }
+
+/* Loading Progress Bar */
+.loading-content {
+    text-align: center;
+}
+
+.loading-text {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1890ff;
+    margin-bottom: 24px;
+}
+
+.progress-container {
+    width: 400px;
+    max-width: 90vw;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px rgba(24, 144, 255, 0.5);
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.9);
+    gap: 16px;
+}
+
+.progress-info span {
+    flex: 1;
+}
+
+#progressPercent {
+    font-weight: 600;
+    font-size: 16px;
+    color: #fff;
+    text-align: left;
+}
+
+#progressStatus {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+#progressTime {
+    text-align: right;
+    color: rgba(255, 255, 255, 0.75);
+    font-style: italic;
+}

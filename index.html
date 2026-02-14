@@ -84,8 +84,19 @@
         </main>
 
         <div id="loadingOverlay" class="loading-overlay" style="display: none;">
-            <div class="spinner"></div>
-            <p>Processing files...</p>
+            <div class="loading-content">
+                <div class="loading-text">Processing files...</div>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill"></div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progressPercent">0%</span>
+                        <span id="progressStatus">Starting...</span>
+                        <span id="progressTime">Estimating time...</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

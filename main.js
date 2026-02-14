@@ -118,8 +118,40 @@ async function processFiles() {
     resultsTableBody.innerHTML = '';
 
     const results = [];
+    const totalFiles = selectedFiles.length;
+    const startTime = Date.now();
+    
+    // Progress elements
+    const progressFill = document.getElementById('progressFill');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressStatus = document.getElementById('progressStatus');
+    const progressTime = document.getElementById('progressTime');
 
-    for (const file of selectedFiles) {
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        
+        // Update progress
+        const progress = Math.round((i / totalFiles) * 100);
+        progressFill.style.width = progress + '%';
+        progressPercent.textContent = progress + '%';
+        progressStatus.textContent = `Processing ${i + 1} of ${totalFiles} files...`;
+        
+        // Calculate estimated time remaining
+        if (i > 0) {
+            const elapsed = Date.now() - startTime;
+            const avgTimePerFile = elapsed / i;
+            const remainingFiles = totalFiles - i;
+            const estimatedRemaining = Math.ceil((avgTimePerFile * remainingFiles) / 1000);
+            
+            if (estimatedRemaining > 60) {
+                const minutes = Math.floor(estimatedRemaining / 60);
+                const seconds = estimatedRemaining % 60;
+                progressTime.textContent = `~${minutes}m ${seconds}s remaining`;
+            } else {
+                progressTime.textContent = `~${estimatedRemaining}s remaining`;
+            }
+        }
+        
         try {
             console.log('Processing file:', file.name);
             const result = await processExcelFile(file);
@@ -133,11 +165,21 @@ async function processFiles() {
             });
         }
     }
+    
+    // Set to 100% when complete
+    progressFill.style.width = '100%';
+    progressPercent.textContent = '100%';
+    progressStatus.textContent = 'Completed!';
+    progressTime.textContent = 'Done';
 
     console.log('All results:', results);
     processedResults = results; // Store for graph
     displayResults(results);
-    loadingOverlay.style.display = 'none';
+    
+    // Delay hiding overlay slightly to show completion
+    setTimeout(() => {
+        loadingOverlay.style.display = 'none';
+    }, 500);
 }
 
 async function processExcelFile(file) {
@@ -1122,13 +1164,11 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
                             <th>PTP Amount</th>
                             <th>Claim Paid Count</th>
                             <th>Claim Paid Amount</th>
-                            <th>Total Collection</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${agentNames.map(name => {
                             const agent = allAgentsData[name];
-                            const totalCollection = agent.ptpAmount + agent.claimPaidAmount;
                             return `
                                 <tr>
                                     <td>${name}</td>
@@ -1136,7 +1176,6 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
                                     <td>${agent.ptpAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                     <td>${agent.claimPaidCount.toLocaleString('en-US')}</td>
                                     <td>${agent.claimPaidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                                    <td style="font-weight: 600;">${totalCollection.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                 </tr>
                             `;
                         }).join('')}
@@ -1169,10 +1208,6 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
                 <div class="agent-stat-card claim">
                     <div class="agent-stat-label">Claim Paid Amount</div>
                     <div class="agent-stat-value">${agent.claimPaidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-                </div>
-                <div class="agent-stat-card total">
-                    <div class="agent-stat-label">Total Collection</div>
-                    <div class="agent-stat-value">${totalCollection.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                 </div>
             </div>
         `;

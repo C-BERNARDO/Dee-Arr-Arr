@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Account Counter</title>
+    <link rel="stylesheet" href="main.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Excel Account Counter</h1>
+            <p class="subtitle">Upload Excel files to count accounts excluding SMS and blank remarks</p>
+        </header>
+
+        <main class="main-layout">
+            <!-- Left side - Results Table -->
+            <div class="results-panel">
+                <div id="totalSummary" class="total-summary" style="display: none;"></div>
+                
+                <div id="resultsSection" class="results-section" style="display: none;">
+                    <div class="results-header">
+                        <h2>Results by File</h2>
+                        <div class="header-buttons">
+                            <button id="viewAgentCollectionBtn" class="btn-secondary">👤 Agent Collection</button>
+                            <button id="viewGraphBtn" class="btn-graph">📊 View Graph</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="resultsTable" class="excel-table">
+                            <thead>
+                                <tr>
+                                    <th>Files</th>
+                                    <th>Worked on Ticket</th>
+                                    <th>Total Dials</th>
+                                    <th>Connected</th>
+                                    <th>Debtor</th>
+                                    <th>PTP Count</th>
+                                    <th>PTP Amount</th>
+                                    <th>Claim Paid Count</th>
+                                    <th>Claim Paid Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="emptyState" class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    <p>No files processed yet</p>
+                    <p class="empty-hint">Upload Excel files to see results</p>
+                </div>
+            </div>
+
+            <!-- Right side - Controls -->
+            <div class="controls-panel">
+                <section class="upload-section">
+                    <div class="upload-area" id="uploadArea">
+                        <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p class="upload-text">Click to select Excel files</p>
+                        <p class="upload-hint">or drag and drop here</p>
+                        <input type="file" id="fileInput" accept=".xlsx,.xls" multiple hidden>
+                    </div>
+                    <button id="processBtn" class="btn-primary" disabled>Process Files</button>
+                </section>
+
+                <section class="files-section" id="filesSection" style="display: none;">
+                    <h3>Selected Files</h3>
+                    <div id="filesList" class="files-list"></div>
+                </section>
+            </div>
+        </main>
+
+        <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+            <div class="spinner"></div>
+            <p>Processing files...</p>
+        </div>
+    </div>
+
+    <!-- Graph Modal -->
+    <div id="graphModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>PTP & Claim Paid Amounts Over Time</h2>
+                <div class="modal-controls">
+                    <select id="monthFilter" class="month-filter">
+                        <option value="all">All Dates</option>
+                        <option value="compare">Compare Months</option>
+                    </select>
+                    <button class="modal-close" id="closeModal">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="monthCompareSelectors" style="display: none;" class="month-selectors">
+                    <label>
+                        <span>Month 1:</span>
+                        <select id="month1Select" class="month-select"></select>
+                    </label>
+                    <label>
+                        <span>Month 2:</span>
+                        <select id="month2Select" class="month-select"></select>
+                    </label>
+                    <button id="applyCompare" class="btn-apply">Apply Comparison</button>
+                </div>
+                <canvas id="amountsChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent Collection Modal -->
+    <div id="agentModal" class="modal" style="display: none;">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>Agent Collection Report</h2>
+                <div class="modal-controls">
+                    <select id="agentMonthFilter" class="agent-filter">
+                        <option value="all">All Months</option>
+                    </select>
+                    <select id="agentFilter" class="agent-filter">
+                        <option value="all">All Agents</option>
+                    </select>
+                    <button class="modal-close" id="closeAgentModal">&times;</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="agentStatsContainer" class="agent-stats-container"></div>
+                <div id="agentGraphContainer" class="agent-graph-container" style="display: none;">
+                    <div class="agent-graph-controls">
+                        <div class="control-group">
+                            <label>View Type:</label>
+                            <select id="agentGraphType" class="graph-control-select">
+                                <option value="daily">Daily Performance</option>
+                                <option value="monthly">Monthly Comparison</option>
+                            </select>
+                        </div>
+                        <div class="control-group" id="monthlyComparisonControls" style="display: none;">
+                            <label>Select Months to Compare:</label>
+                            <div class="month-comparison-selectors">
+                                <select id="agentMonth1" class="graph-control-select"></select>
+                                <select id="agentMonth2" class="graph-control-select"></select>
+                                <button id="applyAgentMonthCompare" class="btn-apply-small">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                    <canvas id="agentChart"></canvas>
+                </div>
+                <div id="agentTableContainer" class="agent-table-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

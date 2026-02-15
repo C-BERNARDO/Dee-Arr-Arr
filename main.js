@@ -126,30 +126,39 @@ async function processFiles() {
     const progressPercent = document.getElementById('progressPercent');
     const progressStatus = document.getElementById('progressStatus');
     const progressTime = document.getElementById('progressTime');
+    
+    // Initialize
+    progressFill.style.width = '0%';
+    progressPercent.textContent = '0%';
+    progressStatus.textContent = `Processing 0 of ${totalFiles} files...`;
+    progressTime.textContent = 'Calculating...';
 
     for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
         
-        // Update progress
-        const progress = Math.round((i / totalFiles) * 100);
-        progressFill.style.width = progress + '%';
-        progressPercent.textContent = progress + '%';
-        progressStatus.textContent = `Processing ${i + 1} of ${totalFiles} files...`;
+        // Update progress BEFORE processing (starting file)
+        const startProgress = Math.round((i / totalFiles) * 100);
+        progressFill.style.width = startProgress + '%';
+        progressPercent.textContent = startProgress + '%';
+        progressStatus.textContent = `Processing file ${i + 1} of ${totalFiles}: ${file.name}`;
         
-        // Calculate estimated time remaining
+        // Calculate estimated time remaining BEFORE processing
         if (i > 0) {
             const elapsed = Date.now() - startTime;
             const avgTimePerFile = elapsed / i;
             const remainingFiles = totalFiles - i;
-            const estimatedRemaining = Math.ceil((avgTimePerFile * remainingFiles) / 1000);
+            const estimatedRemainingMs = avgTimePerFile * remainingFiles;
+            const estimatedRemainingSec = Math.ceil(estimatedRemainingMs / 1000);
             
-            if (estimatedRemaining > 60) {
-                const minutes = Math.floor(estimatedRemaining / 60);
-                const seconds = estimatedRemaining % 60;
-                progressTime.textContent = `~${minutes}m ${seconds}s remaining`;
+            if (estimatedRemainingSec > 60) {
+                const minutes = Math.floor(estimatedRemainingSec / 60);
+                const seconds = estimatedRemainingSec % 60;
+                progressTime.textContent = `Estimated time: ~${minutes}m ${seconds}s`;
             } else {
-                progressTime.textContent = `~${estimatedRemaining}s remaining`;
+                progressTime.textContent = `Estimated time: ~${estimatedRemainingSec}s`;
             }
+        } else {
+            progressTime.textContent = 'Calculating time...';
         }
         
         try {
@@ -157,29 +166,65 @@ async function processFiles() {
             const result = await processExcelFile(file);
             console.log('Result:', result);
             results.push(result);
+            
+            // Update progress AFTER processing (completed file)
+            const completedProgress = Math.round(((i + 1) / totalFiles) * 100);
+            progressFill.style.width = completedProgress + '%';
+            progressPercent.textContent = completedProgress + '%';
+            
+            // Update time estimate after completion
+            if (i < totalFiles - 1) {
+                const elapsed = Date.now() - startTime;
+                const avgTimePerFile = elapsed / (i + 1);
+                const remainingFiles = totalFiles - (i + 1);
+                const estimatedRemainingMs = avgTimePerFile * remainingFiles;
+                const estimatedRemainingSec = Math.ceil(estimatedRemainingMs / 1000);
+                
+                if (estimatedRemainingSec > 60) {
+                    const minutes = Math.floor(estimatedRemainingSec / 60);
+                    const seconds = estimatedRemainingSec % 60;
+                    progressTime.textContent = `Estimated time: ~${minutes}m ${seconds}s`;
+                } else {
+                    progressTime.textContent = `Estimated time: ~${estimatedRemainingSec}s`;
+                }
+            }
+            
         } catch (error) {
             console.error('Error processing file:', file.name, error);
             results.push({
                 fileName: file.name,
                 error: error.message
             });
+            
+            // Still update progress even on error
+            const completedProgress = Math.round(((i + 1) / totalFiles) * 100);
+            progressFill.style.width = completedProgress + '%';
+            progressPercent.textContent = completedProgress + '%';
         }
     }
     
     // Set to 100% when complete
     progressFill.style.width = '100%';
     progressPercent.textContent = '100%';
-    progressStatus.textContent = 'Completed!';
-    progressTime.textContent = 'Done';
+    progressStatus.textContent = `Completed processing ${totalFiles} file${totalFiles > 1 ? 's' : ''}`;
+    
+    const totalTime = Math.ceil((Date.now() - startTime) / 1000);
+    if (totalTime > 60) {
+        const minutes = Math.floor(totalTime / 60);
+        const seconds = totalTime % 60;
+        progressTime.textContent = `Total time: ${minutes}m ${seconds}s`;
+    } else {
+        progressTime.textContent = `Total time: ${totalTime}s`;
+    }
 
     console.log('All results:', results);
     processedResults = results; // Store for graph
     displayResults(results);
     
-    // Delay hiding overlay slightly to show completion
+    // Delay hiding overlay to show completion
     setTimeout(() => {
         loadingOverlay.style.display = 'none';
-    }, 500);
+    }, 800);
 }
 
 async function processExcelFile(file) {
@@ -1303,9 +1348,6 @@ function renderAgentDailyGraph(agentName, agentDateData) {
     
     const ptpData = dates.map(date => agentDateData[date].ptpAmount);
     const claimPaidData = dates.map(date => agentDateData[date].claimPaidAmount);
-    const totalData = dates.map(date => 
-        agentDateData[date].ptpAmount + agentDateData[date].claimPaidAmount
-    );
     
     renderAgentChart(labels, [
         {
@@ -1319,12 +1361,6 @@ function renderAgentDailyGraph(agentName, agentDateData) {
             data: claimPaidData,
             borderColor: '#eb2f96',
             backgroundColor: 'rgba(235, 47, 150, 0.1)',
-        },
-        {
-            label: 'Total Collection',
-            data: totalData,
-            borderColor: '#1890ff',
-            backgroundColor: 'rgba(24, 144, 255, 0.1)',
         }
     ], `${agentName} - Daily Performance`);
 }
@@ -1355,17 +1391,9 @@ function renderAgentMonthlyComparisonGraph(agentName, agentDateData, month1Key, 
     
     const month1PtpData = allDays.map(day => month1Data[day]?.ptpAmount || null);
     const month1ClaimData = allDays.map(day => month1Data[day]?.claimPaidAmount || null);
-    const month1TotalData = allDays.map(day => {
-        if (!month1Data[day]) return null;
-        return month1Data[day].ptpAmount + month1Data[day].claimPaidAmount;
-    });
     
     const month2PtpData = allDays.map(day => month2Data[day]?.ptpAmount || null);
     const month2ClaimData = allDays.map(day => month2Data[day]?.claimPaidAmount || null);
-    const month2TotalData = allDays.map(day => {
-        if (!month2Data[day]) return null;
-        return month2Data[day].ptpAmount + month2Data[day].claimPaidAmount;
-    });
     
     renderAgentChart(labels, [
         {
@@ -1381,12 +1409,6 @@ function renderAgentMonthlyComparisonGraph(agentName, agentDateData, month1Key, 
             backgroundColor: 'rgba(235, 47, 150, 0.1)',
         },
         {
-            label: `${month1Name} - Total`,
-            data: month1TotalData,
-            borderColor: '#1890ff',
-            backgroundColor: 'rgba(24, 144, 255, 0.1)',
-        },
-        {
             label: `${month2Name} - PTP`,
             data: month2PtpData,
             borderColor: '#52c41a',
@@ -1398,13 +1420,6 @@ function renderAgentMonthlyComparisonGraph(agentName, agentDateData, month1Key, 
             data: month2ClaimData,
             borderColor: '#fa8c16',
             backgroundColor: 'rgba(250, 140, 22, 0.1)',
-            borderDash: [5, 5],
-        },
-        {
-            label: `${month2Name} - Total`,
-            data: month2TotalData,
-            borderColor: '#13c2c2',
-            backgroundColor: 'rgba(19, 194, 194, 0.1)',
             borderDash: [5, 5],
         }
     ], `${agentName} - Monthly Comparison`);

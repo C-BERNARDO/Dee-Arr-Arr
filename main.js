@@ -2,6 +2,7 @@
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
 const processBtn = document.getElementById('processBtn');
+const clearAllBtn = document.getElementById('clearAllBtn');
 const filesSection = document.getElementById('filesSection');
 const filesList = document.getElementById('filesList');
 const resultsSection = document.getElementById('resultsSection');
@@ -24,6 +25,7 @@ let processedResults = [];
 uploadArea.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', handleFileSelect);
 processBtn.addEventListener('click', processFiles);
+clearAllBtn.addEventListener('click', clearAll);
 viewGraphBtn.addEventListener('click', showGraph);
 closeModal.addEventListener('click', hideGraph);
 viewAgentCollectionBtn.addEventListener('click', showAgentCollection);
@@ -108,6 +110,34 @@ function updateFilesList() {
 
 function updateProcessButton() {
     processBtn.disabled = selectedFiles.length === 0;
+    clearAllBtn.style.display = selectedFiles.length > 0 ? 'block' : 'none';
+}
+
+function clearAll() {
+    // Clear selected files
+    selectedFiles = [];
+    processedResults = [];
+    
+    // Reset file input
+    fileInput.value = '';
+    
+    // Hide sections
+    filesSection.style.display = 'none';
+    resultsSection.style.display = 'none';
+    totalSummary.style.display = 'none';
+    clearAllBtn.style.display = 'none';
+    
+    // Show empty state
+    emptyState.style.display = 'flex';
+    
+    // Disable process button
+    processBtn.disabled = true;
+    
+    // Clear file list
+    filesList.innerHTML = '';
+    
+    // Clear results table
+    resultsTableBody.innerHTML = '';
 }
 
 // File processing

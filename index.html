@@ -10,7 +10,7 @@
     <div class="container">
         <header>
             <h1>Excel Account Counter</h1>
-            <p class="subtitle">Upload Excel files to count accounts (DRR File Name must be: DRR "Campaign" "Date")</p>
+            <p class="subtitle">Upload Excel files to count accounts excluding SMS and blank remarks</p>
         </header>
 
         <main class="main-layout">
@@ -74,6 +74,7 @@
                         <input type="file" id="fileInput" accept=".xlsx,.xls" multiple hidden>
                     </div>
                     <button id="processBtn" class="btn-primary" disabled>Process Files</button>
+                    <button id="clearAllBtn" class="btn-clear" style="display: none;">Clear All</button>
                 </section>
 
                 <section class="files-section" id="filesSection" style="display: none;">

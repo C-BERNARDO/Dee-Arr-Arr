@@ -1425,3 +1425,31 @@ header h1 {
     font-weight: 600;
     font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
 }
+
+/* Clear All Button */
+.btn-clear {
+    width: 100%;
+    padding: 10px 15px;
+    background: #fff;
+    color: #ff4d4f;
+    border: 1px solid #ff4d4f;
+    border-radius: 2px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.016);
+    height: 40px;
+    margin-top: 8px;
+}
+
+.btn-clear:hover {
+    background: #ff4d4f;
+    color: #fff;
+    border-color: #ff4d4f;
+}
+
+.btn-clear:active {
+    background: #cf1322;
+    border-color: #cf1322;
+}

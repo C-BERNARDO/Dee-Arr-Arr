@@ -32,9 +32,10 @@
                                 <tr>
                                     <th>Files</th>
                                     <th>Worked on Ticket</th>
+                                    <th>Total Balance</th>
                                     <th>Total Dials</th>
                                     <th>Connected</th>
-                                    <th>Debtor</th>
+                                    <th>RPC</th>
                                     <th>PTP Count</th>
                                     <th>PTP Amount</th>
                                     <th>Claim Paid Count</th>
@@ -103,7 +104,7 @@
 
     <!-- Graph Modal -->
     <div id="graphModal" class="modal" style="display: none;">
-        <div class="modal-content">
+        <div class="modal-content modal-large">
             <div class="modal-header">
                 <h2>PTP & Claim Paid Amounts Over Time</h2>
                 <div class="modal-controls">
@@ -126,7 +127,16 @@
                     </label>
                     <button id="applyCompare" class="btn-apply">Apply Comparison</button>
                 </div>
-                <canvas id="amountsChart"></canvas>
+                <div class="dual-chart-container">
+                    <div class="chart-wrapper">
+                        <h3 class="chart-title ptp-title">PTP Amount</h3>
+                        <canvas id="ptpChart"></canvas>
+                    </div>
+                    <div class="chart-wrapper">
+                        <h3 class="chart-title claim-title">Claim Paid Amount</h3>
+                        <canvas id="claimChart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -166,7 +176,16 @@
                             </div>
                         </div>
                     </div>
-                    <canvas id="agentChart"></canvas>
+                    <div class="dual-chart-container">
+                        <div class="chart-wrapper">
+                            <h3 class="chart-title ptp-title">PTP Amount</h3>
+                            <canvas id="agentPtpChart"></canvas>
+                        </div>
+                        <div class="chart-wrapper">
+                            <h3 class="chart-title claim-title">Claim Paid Amount</h3>
+                            <canvas id="agentClaimChart"></canvas>
+                        </div>
+                    </div>
                 </div>
                 <div id="agentTableContainer" class="agent-table-container"></div>
             </div>

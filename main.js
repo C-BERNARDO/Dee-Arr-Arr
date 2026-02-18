@@ -278,6 +278,7 @@ async function processExcelFile(file) {
                 const ptpAmountColumn = findColumn(jsonData, 'PTP Amount');
                 const claimPaidAmountColumn = findColumn(jsonData, 'Claim Paid Amount');
                 const remarkByColumn = findColumn(jsonData, 'Remark By');
+                const balanceColumn = findColumn(jsonData, 'Balance');
                 
                 if (!accountNoColumn) {
                     throw new Error('Column "Account No." not found');
@@ -311,13 +312,17 @@ async function processExcelFile(file) {
                 const accountNumbers = [];
                 const predictiveAccountNumbers = [];
                 const debtorAccountNumbers = [];
+                const seenAccountsForBalance = new Set(); // track first occurrence only
                 let totalRows = jsonData.length;
                 let excludedSMS = 0;
                 let excludedBlanks = 0;
                 let ptpCount = 0;
                 let ptpTotalAmount = 0;
+                let predictivePtpCount = 0;
+                let predictivePtpAmount = 0;
                 let claimPaidCount = 0;
                 let claimPaidTotalAmount = 0;
+                let totalBalance = 0;
                 
                 // Collect agent data
                 const agentData = {};
@@ -363,16 +368,20 @@ async function processExcelFile(file) {
                     
                     // Process PTP Amount
                     if (ptpAmount !== null && ptpAmount !== undefined && ptpAmount !== '') {
-                        // Convert to string first to handle different formats
                         const ptpStr = ptpAmount.toString().trim();
                         if (ptpStr !== '' && ptpStr !== '0' && ptpStr !== '0.00') {
-                            // Remove commas and any currency symbols before parsing
                             const cleanStr = ptpStr.replace(/,/g, '').replace(/[^\d.-]/g, '');
                             const ptpValue = parseFloat(cleanStr);
-                            // Check if it's a valid number and not zero
                             if (!isNaN(ptpValue) && ptpValue > 0) {
                                 ptpCount++;
                                 ptpTotalAmount += ptpValue;
+                                
+                                // Track Predictive PTP separately
+                                const remarkTypeStr = row[remarkTypeColumn] ? row[remarkTypeColumn].toString().trim().toUpperCase() : '';
+                                if (remarkTypeStr === 'PREDICTIVE') {
+                                    predictivePtpCount++;
+                                    predictivePtpAmount += ptpValue;
+                                }
                                 
                                 // Add to agent data
                                 if (agentName && agentData[agentName]) {
@@ -391,13 +400,10 @@ async function processExcelFile(file) {
                     
                     // Process Claim Paid Amount
                     if (claimPaidAmount !== null && claimPaidAmount !== undefined && claimPaidAmount !== '') {
-                        // Convert to string first to handle different formats
                         const claimPaidStr = claimPaidAmount.toString().trim();
                         if (claimPaidStr !== '' && claimPaidStr !== '0' && claimPaidStr !== '0.00') {
-                            // Remove commas and any currency symbols before parsing
                             const cleanStr = claimPaidStr.replace(/,/g, '').replace(/[^\d.-]/g, '');
                             const claimPaidValue = parseFloat(cleanStr);
-                            // Check if it's a valid number and not zero
                             if (!isNaN(claimPaidValue) && claimPaidValue > 0) {
                                 claimPaidCount++;
                                 claimPaidTotalAmount += claimPaidValue;
@@ -446,6 +452,17 @@ async function processExcelFile(file) {
                         
                         // This row passes the filter - add account number
                         accountNumbers.push(accountNo.toString().trim());
+                        
+                        // Sum balance only for the first occurrence of each account (matches Worked on Ticket dedup logic)
+                        if (balanceColumn && !seenAccountsForBalance.has(accountNo.toString().trim())) {
+                            seenAccountsForBalance.add(accountNo.toString().trim());
+                            const balVal = row[balanceColumn];
+                            if (balVal !== null && balVal !== undefined && balVal !== '') {
+                                const cleanBal = balVal.toString().replace(/,/g, '').replace(/[^\d.-]/g, '');
+                                const parsed = parseFloat(cleanBal);
+                                if (!isNaN(parsed)) totalBalance += parsed;
+                            }
+                        }
                     }
                 });
                 
@@ -480,8 +497,12 @@ async function processExcelFile(file) {
                     debtorDuplicates: debtorDuplicates,
                     ptpCount: ptpCount,
                     ptpTotalAmount: ptpTotalAmount,
+                    predictivePtpCount: predictivePtpCount,
+                    predictivePtpAmount: predictivePtpAmount,
                     claimPaidCount: claimPaidCount,
                     claimPaidTotalAmount: claimPaidTotalAmount,
+                    totalBalance: totalBalance,
+                    hasBalanceColumn: !!balanceColumn,
                     agentData: agentData,
                     agentDataByDate: agentDataByDate,
                     // Store arrays for cross-file deduplication
@@ -590,8 +611,17 @@ function displayResults(results) {
     const totalBeforeDedup = validResults.reduce((sum, r) => sum + r.countBeforeDedup, 0);
     const totalPtpCount = validResults.reduce((sum, r) => sum + r.ptpCount, 0);
     const totalPtpAmount = validResults.reduce((sum, r) => sum + r.ptpTotalAmount, 0);
+    const totalPredictivePtpCount = validResults.reduce((sum, r) => sum + r.predictivePtpCount, 0);
+    const totalPredictivePtpAmount = validResults.reduce((sum, r) => sum + r.predictivePtpAmount, 0);
     const totalClaimPaidCount = validResults.reduce((sum, r) => sum + r.claimPaidCount, 0);
     const totalClaimPaidAmount = validResults.reduce((sum, r) => sum + r.claimPaidTotalAmount, 0);
+    const totalBalance = validResults.reduce((sum, r) => sum + (r.totalBalance || 0), 0);
+    const hasBalance = validResults.some(r => r.hasBalanceColumn);
+    
+    // Calculate Collection Rate: (Claim Paid Amount / Total Balance) * 100
+    const collectionRate = totalBalance > 0 
+        ? Math.round((totalClaimPaidAmount / totalBalance) * 100) 
+        : 0;
     
     // Calculate Penetration: DIALS / WORKED ON TICKET (whole number, no decimals)
     const penetration = uniqueAccountsAcrossFiles.length > 0 
@@ -608,10 +638,16 @@ function displayResults(results) {
     totalSummary.innerHTML = `
         <div class="summary-header-controls">
             <h3>Overall Summary (${validResults.length} file${validResults.length > 1 ? 's' : ''}) - Merged & Deduplicated</h3>
-            <button id="toggleMonthlyView" class="btn-toggle">
-                <span class="toggle-icon">📅</span>
-                <span class="toggle-text">View by Month</span>
-            </button>
+            <div class="summary-header-actions">
+                <button id="togglePredictivePtp" class="btn-toggle btn-toggle-ptp">
+                    <span class="toggle-icon">🔍</span>
+                    <span class="toggle-text">Show Predictive PTP</span>
+                </button>
+                <button id="toggleMonthlyView" class="btn-toggle">
+                    <span class="toggle-icon">📅</span>
+                    <span class="toggle-text">View by Month</span>
+                </button>
+            </div>
         </div>
         <div id="overallView" class="summary-view">
             <div class="summary-container">
@@ -624,13 +660,18 @@ function displayResults(results) {
                         <div class="summary-stat-value">${uniqueAccountsAcrossFiles.length}</div>
                         <div class="summary-stat-label">Worked on Ticket</div>
                     </div>
+                    ${hasBalance ? `
+                    <div class="summary-stat balance-highlight">
+                        <div class="summary-stat-value">${totalBalance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                        <div class="summary-stat-label">Total Balance</div>
+                    </div>` : ''}
                     <div class="summary-stat highlight">
                         <div class="summary-stat-value">${uniquePredictiveAcrossFiles.length}</div>
                         <div class="summary-stat-label">Connected</div>
                     </div>
                     <div class="summary-stat debtor-highlight">
                         <div class="summary-stat-value">${uniqueDebtorAcrossFiles.length}</div>
-                        <div class="summary-stat-label">Debtor</div>
+                        <div class="summary-stat-label">RPC</div>
                     </div>
                     <div class="summary-stat ptp-highlight">
                         <div class="summary-stat-value">${totalPtpCount}</div>
@@ -658,6 +699,53 @@ function displayResults(results) {
                         <div class="summary-stat-value-large">${connectedRate}%</div>
                         <div class="summary-stat-label-large">Connected Rate</div>
                     </div>
+                    ${hasBalance ? `
+                    <div class="summary-stat-large collection-rate-highlight">
+                        <div class="summary-stat-value-large">${collectionRate}%</div>
+                        <div class="summary-stat-label-large">Collection Rate</div>
+                    </div>` : ''}
+                </div>
+            </div>
+
+            <!-- Predictive PTP Breakdown - hidden by default -->
+            <div id="predictivePtpBreakdown" class="predictive-ptp-breakdown" style="display: none;">
+                <div class="breakdown-header">
+                    <span class="breakdown-label">🔍 Predictive PTP Breakdown</span>
+                    <span class="breakdown-sub">PTP records where Remark Type = PREDICTIVE</span>
+                </div>
+                <div class="breakdown-grid">
+                    <div class="breakdown-card">
+                        <div class="breakdown-card-section all">
+                            <div class="breakdown-card-value">${totalPtpCount}</div>
+                            <div class="breakdown-card-label">All PTP Count</div>
+                        </div>
+                        <div class="breakdown-divider">→</div>
+                        <div class="breakdown-card-section predictive">
+                            <div class="breakdown-card-value">${totalPredictivePtpCount}</div>
+                            <div class="breakdown-card-label">Predictive PTP Count</div>
+                        </div>
+                        <div class="breakdown-divider">+</div>
+                        <div class="breakdown-card-section other">
+                            <div class="breakdown-card-value">${totalPtpCount - totalPredictivePtpCount}</div>
+                            <div class="breakdown-card-label">Other PTP Count</div>
+                        </div>
+                    </div>
+                    <div class="breakdown-card">
+                        <div class="breakdown-card-section all">
+                            <div class="breakdown-card-value">${totalPtpAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                            <div class="breakdown-card-label">All PTP Amount</div>
+                        </div>
+                        <div class="breakdown-divider">→</div>
+                        <div class="breakdown-card-section predictive">
+                            <div class="breakdown-card-value">${totalPredictivePtpAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                            <div class="breakdown-card-label">Predictive PTP Amount</div>
+                        </div>
+                        <div class="breakdown-divider">+</div>
+                        <div class="breakdown-card-section other">
+                            <div class="breakdown-card-value">${(totalPtpAmount - totalPredictivePtpAmount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                            <div class="breakdown-card-label">Other PTP Amount</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -666,39 +754,19 @@ function displayResults(results) {
         </div>
     `;
     
-    // Set up toggle button event listener
+    // Set up toggle button event listeners
     setTimeout(() => {
         const toggleBtn = document.getElementById('toggleMonthlyView');
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => toggleMonthlyView(validResults));
-        }
+        if (toggleBtn) toggleBtn.addEventListener('click', () => toggleMonthlyView(validResults));
+
+        const predictiveToggle = document.getElementById('togglePredictivePtp');
+        if (predictiveToggle) predictiveToggle.addEventListener('click', () => togglePredictivePtp());
     }, 0);
     
-    // Populate Excel table
-    resultsTableBody.innerHTML = results.map(result => {
-        if (result.error) {
-            return `
-                <tr>
-                    <td>${result.fileName}</td>
-                    <td colspan="8" style="color: #e53e3e; text-align: center;">Error: ${result.error}</td>
-                </tr>
-            `;
-        }
-        
-        return `
-            <tr>
-                <td>${result.fileName}</td>
-                <td>${result.uniqueCount}</td>
-                <td>${result.countBeforeDedup}</td>
-                <td>${result.predictiveCount}</td>
-                <td>${result.debtorCount}</td>
-                <td>${result.ptpCount}</td>
-                <td>${result.ptpTotalAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                <td>${result.claimPaidCount}</td>
-                <td>${result.claimPaidTotalAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-            </tr>
-        `;
-    }).join('');
+    // Populate Excel table — store results for table re-render
+    window._lastResults = results;
+    window._predictivePtpOn = false;
+    renderResultsTable(results, false);
     
     // Scroll to results (smooth scroll to top of results)
     resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -785,107 +853,46 @@ function getMonthsFromData(results) {
 }
 
 function renderAllDatesGraph(results) {
-    // Sort by date
     results.sort((a, b) => new Date(a.fileDate) - new Date(b.fileDate));
-    
-    // Prepare data
-    const labels = results.map(r => {
-        const date = new Date(r.fileDate);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
-    });
-    
+    const labels = results.map(r => new Date(r.fileDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }));
     const ptpData = results.map(r => r.ptpTotalAmount);
-    const claimPaidData = results.map(r => r.claimPaidTotalAmount);
-    
-    renderChart(labels, [
-        {
-            label: 'PTP Amount',
-            data: ptpData,
-            borderColor: '#8b5cf6',
-            backgroundColor: 'rgba(139, 92, 246, 0.1)',
-        },
-        {
-            label: 'Claim Paid Amount',
-            data: claimPaidData,
-            borderColor: '#ec4899',
-            backgroundColor: 'rgba(236, 72, 153, 0.1)',
-        }
-    ]);
+    const claimData = results.map(r => r.claimPaidTotalAmount);
+    destroyMainCharts();
+    window.ptpChartInstance = buildSingleChart('ptpChart', labels, [{ label: 'PTP Amount', data: ptpData, borderColor: '#722ed1', backgroundColor: 'rgba(114,46,209,0.1)' }]);
+    window.claimChartInstance = buildSingleChart('claimChart', labels, [{ label: 'Claim Paid Amount', data: claimData, borderColor: '#eb2f96', backgroundColor: 'rgba(235,47,150,0.1)' }]);
 }
 
 function renderComparisonGraph(results, month1Key, month2Key) {
-    // Group by month and day
-    const month1Data = {};
-    const month2Data = {};
-    
+    const month1Data = {}, month2Data = {};
     results.forEach(result => {
         const date = new Date(result.fileDate);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         const day = date.getDate();
-        
-        if (monthKey === month1Key) {
-            month1Data[day] = result;
-        } else if (monthKey === month2Key) {
-            month2Data[day] = result;
-        }
+        if (monthKey === month1Key) month1Data[day] = result;
+        else if (monthKey === month2Key) month2Data[day] = result;
     });
-    
-    // Get all unique days
     const allDays = [...new Set([...Object.keys(month1Data), ...Object.keys(month2Data)])].map(Number).sort((a, b) => a - b);
-    
-    // Prepare labels and data
     const labels = allDays.map(day => `Day ${day}`);
-    
-    const month1Name = new Date(month1Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-    const month2Name = new Date(month2Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-    
-    const month1PtpData = allDays.map(day => month1Data[day]?.ptpTotalAmount || null);
-    const month1ClaimData = allDays.map(day => month1Data[day]?.claimPaidTotalAmount || null);
-    const month2PtpData = allDays.map(day => month2Data[day]?.ptpTotalAmount || null);
-    const month2ClaimData = allDays.map(day => month2Data[day]?.claimPaidTotalAmount || null);
-    
-    renderChart(labels, [
-        {
-            label: `${month1Name} - PTP Amount`,
-            data: month1PtpData,
-            borderColor: '#8b5cf6',
-            backgroundColor: 'rgba(139, 92, 246, 0.1)',
-        },
-        {
-            label: `${month1Name} - Claim Paid Amount`,
-            data: month1ClaimData,
-            borderColor: '#ec4899',
-            backgroundColor: 'rgba(236, 72, 153, 0.1)',
-        },
-        {
-            label: `${month2Name} - PTP Amount`,
-            data: month2PtpData,
-            borderColor: '#6366f1',
-            backgroundColor: 'rgba(99, 102, 241, 0.1)',
-            borderDash: [5, 5],
-        },
-        {
-            label: `${month2Name} - Claim Paid Amount`,
-            data: month2ClaimData,
-            borderColor: '#f97316',
-            backgroundColor: 'rgba(249, 115, 22, 0.1)',
-            borderDash: [5, 5],
-        }
+    const m1 = new Date(month1Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    const m2 = new Date(month2Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+    destroyMainCharts();
+    window.ptpChartInstance = buildSingleChart('ptpChart', labels, [
+        { label: m1, data: allDays.map(d => month1Data[d]?.ptpTotalAmount || null), borderColor: '#722ed1', backgroundColor: 'rgba(114,46,209,0.1)' },
+        { label: m2, data: allDays.map(d => month2Data[d]?.ptpTotalAmount || null), borderColor: '#1890ff', backgroundColor: 'rgba(24,144,255,0.1)', borderDash: [5, 5] }
+    ]);
+    window.claimChartInstance = buildSingleChart('claimChart', labels, [
+        { label: m1, data: allDays.map(d => month1Data[d]?.claimPaidTotalAmount || null), borderColor: '#eb2f96', backgroundColor: 'rgba(235,47,150,0.1)' },
+        { label: m2, data: allDays.map(d => month2Data[d]?.claimPaidTotalAmount || null), borderColor: '#52c41a', backgroundColor: 'rgba(82,196,26,0.1)', borderDash: [5, 5] }
     ]);
 }
 
-function renderChart(labels, datasets) {
-    // Destroy previous chart if exists
-    if (chartInstance) {
-        chartInstance.destroy();
-    }
-    
-    // Create chart
-    const ctx = document.getElementById('amountsChart').getContext('2d');
-    chartInstance = new Chart(ctx, {
+function buildSingleChart(canvasId, labels, datasets) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    return new Chart(ctx, {
         type: 'line',
         data: {
-            labels: labels,
+            labels,
             datasets: datasets.map(ds => ({
                 label: ds.label,
                 data: ds.data,
@@ -906,87 +913,37 @@ function renderChart(labels, datasets) {
         options: {
             responsive: true,
             maintainAspectRatio: true,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
+            interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: {
-                    display: true,
-                    position: 'top',
-                    labels: {
-                        font: {
-                            size: 14,
-                            weight: '600'
-                        },
-                        padding: 20,
-                        usePointStyle: true
-                    }
-                },
+                legend: { display: true, position: 'top', labels: { font: { size: 13, weight: '600' }, padding: 16, usePointStyle: true } },
                 tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    padding: 12,
-                    titleFont: {
-                        size: 14,
-                        weight: '600'
-                    },
-                    bodyFont: {
-                        size: 13
-                    },
+                    backgroundColor: 'rgba(0,0,0,0.8)', padding: 12,
                     callbacks: {
-                        label: function(context) {
-                            let label = context.dataset.label || '';
-                            if (label) {
-                                label += ': ';
-                            }
-                            if (context.parsed.y !== null) {
-                                label += context.parsed.y.toLocaleString('en-US', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2
-                                });
-                            } else {
-                                label += 'No data';
-                            }
-                            return label;
+                        label: ctx => {
+                            const val = ctx.parsed.y !== null
+                                ? ctx.parsed.y.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                : 'No data';
+                            return `${ctx.dataset.label}: ${val}`;
                         }
                     }
                 }
             },
             scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        font: {
-                            size: 12
-                        },
-                        callback: function(value) {
-                            return value.toLocaleString('en-US', {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0
-                            });
-                        }
-                    },
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.05)'
-                    }
-                },
-                x: {
-                    ticks: {
-                        font: {
-                            size: 12
-                        }
-                    },
-                    grid: {
-                        display: false
-                    }
-                }
+                y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('en-US'), font: { size: 11 }, color: 'rgba(0,0,0,0.65)' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                x: { ticks: { font: { size: 11 }, color: 'rgba(0,0,0,0.65)' }, grid: { display: false } }
             }
         }
     });
 }
 
+function destroyMainCharts() {
+    if (window.ptpChartInstance) { window.ptpChartInstance.destroy(); window.ptpChartInstance = null; }
+    if (window.claimChartInstance) { window.claimChartInstance.destroy(); window.claimChartInstance = null; }
+}
+
 function hideGraph() {
     graphModal.style.display = 'none';
+    destroyMainCharts();
 }
 
 // Close modal with Escape key
@@ -1302,11 +1259,7 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
 
 function hideAgentCollection() {
     agentModal.style.display = 'none';
-    // Destroy agent chart if exists
-    if (window.agentChartInstance) {
-        window.agentChartInstance.destroy();
-        window.agentChartInstance = null;
-    }
+    destroyAgentCharts();
 }
 
 // Agent Graph Functions
@@ -1370,216 +1323,156 @@ function getMonthsFromAgentData(agentDateData) {
 
 function renderAgentDailyGraph(agentName, agentDateData) {
     const dates = Object.keys(agentDateData).sort();
-    
-    const labels = dates.map(date => {
-        const d = new Date(date);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    });
-    
+    const labels = dates.map(date => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
     const ptpData = dates.map(date => agentDateData[date].ptpAmount);
-    const claimPaidData = dates.map(date => agentDateData[date].claimPaidAmount);
-    
-    renderAgentChart(labels, [
-        {
-            label: 'PTP Amount',
-            data: ptpData,
-            borderColor: '#722ed1',
-            backgroundColor: 'rgba(114, 46, 209, 0.1)',
-        },
-        {
-            label: 'Claim Paid Amount',
-            data: claimPaidData,
-            borderColor: '#eb2f96',
-            backgroundColor: 'rgba(235, 47, 150, 0.1)',
-        }
-    ], `${agentName} - Daily Performance`);
+    const claimData = dates.map(date => agentDateData[date].claimPaidAmount);
+
+    destroyAgentCharts();
+    window.agentPtpChartInstance = buildSingleChart('agentPtpChart', labels, [
+        { label: 'PTP Amount', data: ptpData, borderColor: '#722ed1', backgroundColor: 'rgba(114,46,209,0.1)' }
+    ]);
+    window.agentClaimChartInstance = buildSingleChart('agentClaimChart', labels, [
+        { label: 'Claim Paid Amount', data: claimData, borderColor: '#eb2f96', backgroundColor: 'rgba(235,47,150,0.1)' }
+    ]);
 }
 
 function renderAgentMonthlyComparisonGraph(agentName, agentDateData, month1Key, month2Key) {
-    // Group data by month and day
-    const month1Data = {};
-    const month2Data = {};
-    
+    const month1Data = {}, month2Data = {};
     Object.keys(agentDateData).forEach(date => {
         const d = new Date(date);
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         const day = d.getDate();
-        
-        if (monthKey === month1Key) {
-            month1Data[day] = agentDateData[date];
-        } else if (monthKey === month2Key) {
-            month2Data[day] = agentDateData[date];
-        }
+        if (monthKey === month1Key) month1Data[day] = agentDateData[date];
+        else if (monthKey === month2Key) month2Data[day] = agentDateData[date];
     });
-    
-    // Get all unique days
+
     const allDays = [...new Set([...Object.keys(month1Data), ...Object.keys(month2Data)])].map(Number).sort((a, b) => a - b);
     const labels = allDays.map(day => `Day ${day}`);
-    
-    const month1Name = new Date(month1Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-    const month2Name = new Date(month2Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-    
-    const month1PtpData = allDays.map(day => month1Data[day]?.ptpAmount || null);
-    const month1ClaimData = allDays.map(day => month1Data[day]?.claimPaidAmount || null);
-    
-    const month2PtpData = allDays.map(day => month2Data[day]?.ptpAmount || null);
-    const month2ClaimData = allDays.map(day => month2Data[day]?.claimPaidAmount || null);
-    
-    renderAgentChart(labels, [
-        {
-            label: `${month1Name} - PTP`,
-            data: month1PtpData,
-            borderColor: '#722ed1',
-            backgroundColor: 'rgba(114, 46, 209, 0.1)',
-        },
-        {
-            label: `${month1Name} - Claim Paid`,
-            data: month1ClaimData,
-            borderColor: '#eb2f96',
-            backgroundColor: 'rgba(235, 47, 150, 0.1)',
-        },
-        {
-            label: `${month2Name} - PTP`,
-            data: month2PtpData,
-            borderColor: '#52c41a',
-            backgroundColor: 'rgba(82, 196, 26, 0.1)',
-            borderDash: [5, 5],
-        },
-        {
-            label: `${month2Name} - Claim Paid`,
-            data: month2ClaimData,
-            borderColor: '#fa8c16',
-            backgroundColor: 'rgba(250, 140, 22, 0.1)',
-            borderDash: [5, 5],
-        }
-    ], `${agentName} - Monthly Comparison`);
+    const m1 = new Date(month1Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    const m2 = new Date(month2Key + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+    destroyAgentCharts();
+    window.agentPtpChartInstance = buildSingleChart('agentPtpChart', labels, [
+        { label: m1, data: allDays.map(d => month1Data[d]?.ptpAmount || null), borderColor: '#722ed1', backgroundColor: 'rgba(114,46,209,0.1)' },
+        { label: m2, data: allDays.map(d => month2Data[d]?.ptpAmount || null), borderColor: '#1890ff', backgroundColor: 'rgba(24,144,255,0.1)', borderDash: [5, 5] }
+    ]);
+    window.agentClaimChartInstance = buildSingleChart('agentClaimChart', labels, [
+        { label: m1, data: allDays.map(d => month1Data[d]?.claimPaidAmount || null), borderColor: '#eb2f96', backgroundColor: 'rgba(235,47,150,0.1)' },
+        { label: m2, data: allDays.map(d => month2Data[d]?.claimPaidAmount || null), borderColor: '#52c41a', backgroundColor: 'rgba(82,196,26,0.1)', borderDash: [5, 5] }
+    ]);
 }
 
-function renderAgentChart(labels, datasets, title) {
-    // Destroy previous chart if exists
-    if (window.agentChartInstance) {
-        window.agentChartInstance.destroy();
-    }
-    
-    const ctx = document.getElementById('agentChart').getContext('2d');
-    window.agentChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: datasets.map(ds => ({
-                label: ds.label,
-                data: ds.data,
-                borderColor: ds.borderColor,
-                backgroundColor: ds.backgroundColor,
-                borderWidth: 3,
-                tension: 0.4,
-                fill: true,
-                pointRadius: 5,
-                pointHoverRadius: 7,
-                pointBackgroundColor: ds.borderColor,
-                pointBorderColor: '#fff',
-                pointBorderWidth: 2,
-                borderDash: ds.borderDash || [],
-                spanGaps: true
-            }))
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
-            plugins: {
-                title: {
-                    display: true,
-                    text: title,
-                    font: {
-                        size: 16,
-                        weight: '600'
-                    },
-                    color: 'rgba(0, 0, 0, 0.85)',
-                    padding: 20
-                },
-                legend: {
-                    display: true,
-                    position: 'top',
-                    labels: {
-                        font: {
-                            size: 12,
-                            weight: '500'
-                        },
-                        padding: 15,
-                        usePointStyle: true,
-                        color: 'rgba(0, 0, 0, 0.85)'
-                    }
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    padding: 12,
-                    titleFont: {
-                        size: 14,
-                        weight: '600'
-                    },
-                    bodyFont: {
-                        size: 13
-                    },
-                    callbacks: {
-                        label: function(context) {
-                            let label = context.dataset.label || '';
-                            if (label) {
-                                label += ': ';
-                            }
-                            if (context.parsed.y !== null) {
-                                label += context.parsed.y.toLocaleString('en-US', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2
-                                });
-                            } else {
-                                label += 'No data';
-                            }
-                            return label;
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        font: {
-                            size: 11
-                        },
-                        color: 'rgba(0, 0, 0, 0.65)',
-                        callback: function(value) {
-                            return value.toLocaleString('en-US', {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 0
-                            });
-                        }
-                    },
-                    grid: {
-                        color: 'rgba(0, 0, 0, 0.06)'
-                    }
-                },
-                x: {
-                    ticks: {
-                        font: {
-                            size: 11
-                        },
-                        color: 'rgba(0, 0, 0, 0.65)'
-                    },
-                    grid: {
-                        display: false
-                    }
-                }
-            }
-        }
-    });
+function destroyAgentCharts() {
+    if (window.agentPtpChartInstance) { window.agentPtpChartInstance.destroy(); window.agentPtpChartInstance = null; }
+    if (window.agentClaimChartInstance) { window.agentClaimChartInstance.destroy(); window.agentClaimChartInstance = null; }
 }
 
 // Monthly View Toggle
 let isMonthlyView = false;
+
+function renderResultsTable(results, showPredictive) {
+    const thead = document.querySelector('#resultsTable thead tr');
+    const hasBalance = results.some(r => r.hasBalanceColumn);
+    const balCol = hasBalance ? `<th class="col-balance">Total Balance</th>` : '';
+    const balColPred = hasBalance ? `<th class="col-balance">Total Balance</th>` : '';
+
+    if (showPredictive) {
+        thead.innerHTML = `
+            <th>Files</th>
+            <th>Worked on Ticket</th>
+            ${balColPred}
+            <th>Total Dials</th>
+            <th>Connected</th>
+            <th>RPC</th>
+            <th>PTP Count</th>
+            <th class="col-predictive">↳ Predictive</th>
+            <th class="col-predictive">↳ Other</th>
+            <th>PTP Amount</th>
+            <th class="col-predictive">↳ Predictive</th>
+            <th class="col-predictive">↳ Other</th>
+            <th>Claim Paid Count</th>
+            <th>Claim Paid Amount</th>
+        `;
+    } else {
+        thead.innerHTML = `
+            <th>Files</th>
+            <th>Worked on Ticket</th>
+            ${balCol}
+            <th>Total Dials</th>
+            <th>Connected</th>
+            <th>RPC</th>
+            <th>PTP Count</th>
+            <th>PTP Amount</th>
+            <th>Claim Paid Count</th>
+            <th>Claim Paid Amount</th>
+        `;
+    }
+
+    resultsTableBody.innerHTML = results.map(result => {
+        if (result.error) {
+            const span = showPredictive ? (hasBalance ? 14 : 13) : (hasBalance ? 10 : 9);
+            return `<tr>
+                <td>${result.fileName}</td>
+                <td colspan="${span - 1}" style="color:#e53e3e;text-align:center;">Error: ${result.error}</td>
+            </tr>`;
+        }
+        const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const otherPtpCount = result.ptpCount - (result.predictivePtpCount || 0);
+        const otherPtpAmount = result.ptpTotalAmount - (result.predictivePtpAmount || 0);
+        const balCell = hasBalance
+            ? `<td class="col-balance">${fmt(result.totalBalance || 0)}</td>`
+            : '';
+
+        if (showPredictive) {
+            return `<tr>
+                <td>${result.fileName}</td>
+                <td>${result.uniqueCount}</td>
+                ${balCell}
+                <td>${result.countBeforeDedup}</td>
+                <td>${result.predictiveCount}</td>
+                <td>${result.debtorCount}</td>
+                <td>${result.ptpCount}</td>
+                <td class="col-predictive">${result.predictivePtpCount || 0}</td>
+                <td class="col-predictive">${otherPtpCount}</td>
+                <td>${fmt(result.ptpTotalAmount)}</td>
+                <td class="col-predictive">${fmt(result.predictivePtpAmount || 0)}</td>
+                <td class="col-predictive">${fmt(otherPtpAmount)}</td>
+                <td>${result.claimPaidCount}</td>
+                <td>${fmt(result.claimPaidTotalAmount)}</td>
+            </tr>`;
+        } else {
+            return `<tr>
+                <td>${result.fileName}</td>
+                <td>${result.uniqueCount}</td>
+                ${balCell}
+                <td>${result.countBeforeDedup}</td>
+                <td>${result.predictiveCount}</td>
+                <td>${result.debtorCount}</td>
+                <td>${result.ptpCount}</td>
+                <td>${fmt(result.ptpTotalAmount)}</td>
+                <td>${result.claimPaidCount}</td>
+                <td>${fmt(result.claimPaidTotalAmount)}</td>
+            </tr>`;
+        }
+    }).join('');
+}
+
+function togglePredictivePtp() {
+    window._predictivePtpOn = !window._predictivePtpOn;
+    const btn = document.getElementById('togglePredictivePtp');
+    const breakdown = document.getElementById('predictivePtpBreakdown');
+
+    if (window._predictivePtpOn) {
+        btn.classList.add('active');
+        btn.querySelector('.toggle-text').textContent = 'Hide Predictive PTP';
+        if (breakdown) breakdown.style.display = 'block';
+    } else {
+        btn.classList.remove('active');
+        btn.querySelector('.toggle-text').textContent = 'Show Predictive PTP';
+        if (breakdown) breakdown.style.display = 'none';
+    }
+    renderResultsTable(window._lastResults, window._predictivePtpOn);
+}
 
 function toggleMonthlyView(results) {
     const overallView = document.getElementById('overallView');
@@ -1631,8 +1524,11 @@ function generateMonthlyBreakdown(results) {
                     totalDials: 0,
                     ptpCount: 0,
                     ptpAmount: 0,
+                    predictivePtpCount: 0,
+                    predictivePtpAmount: 0,
                     claimPaidCount: 0,
-                    claimPaidAmount: 0
+                    claimPaidAmount: 0,
+                    totalBalance: 0
                 };
             }
             
@@ -1643,8 +1539,11 @@ function generateMonthlyBreakdown(results) {
             monthlyData[monthKey].totalDials += result.countBeforeDedup;
             monthlyData[monthKey].ptpCount += result.ptpCount;
             monthlyData[monthKey].ptpAmount += result.ptpTotalAmount;
+            monthlyData[monthKey].predictivePtpCount += (result.predictivePtpCount || 0);
+            monthlyData[monthKey].predictivePtpAmount += (result.predictivePtpAmount || 0);
             monthlyData[monthKey].claimPaidCount += result.claimPaidCount;
             monthlyData[monthKey].claimPaidAmount += result.claimPaidTotalAmount;
+            monthlyData[monthKey].totalBalance += (result.totalBalance || 0);
         }
     });
     
@@ -1665,16 +1564,27 @@ function generateMonthlyBreakdown(results) {
             ? Math.round(uniquePredictive.length / uniqueAccounts.length * 100) 
             : 0;
         
+        // Calculate Collection Rate: (Claim Paid Amount / Total Balance) * 100
+        const collectionRate = data.totalBalance > 0
+            ? Math.round((data.claimPaidAmount / data.totalBalance) * 100)
+            : 0;
+        
         return {
             monthName: data.monthName,
             totalDials: data.totalDials,
             workedOnTicket: uniqueAccounts.length,
             connected: uniquePredictive.length,
             debtor: uniqueDebtor.length,
+            totalBalance: data.totalBalance,
             ptpCount: data.ptpCount,
             ptpAmount: data.ptpAmount,
+            predictivePtpCount: data.predictivePtpCount,
+            predictivePtpAmount: data.predictivePtpAmount,
+            otherPtpCount: data.ptpCount - data.predictivePtpCount,
+            otherPtpAmount: data.ptpAmount - data.predictivePtpAmount,
             claimPaidCount: data.claimPaidCount,
             claimPaidAmount: data.claimPaidAmount,
+            collectionRate: collectionRate,
             penetration: penetration,
             connectedRate: connectedRate
         };
@@ -1685,163 +1595,143 @@ function generateMonthlyBreakdown(results) {
         if (previous === undefined) return '';
         const diff = current - previous;
         if (diff === 0) return '';
-        
         const color = diff > 0 ? '#10b981' : '#ef4444';
         const sign = diff > 0 ? '+' : '';
-        
-        return `<span class="trend-indicator" style="color: ${color}">(${sign}${diff.toLocaleString('en-US')})</span>`;
+        return `<span class="trend-indicator" style="color:${color}">(${sign}${diff.toLocaleString('en-US')})</span>`;
     }
     
     function getTrendIndicatorPercent(current, previous) {
         if (previous === undefined) return '';
         const diff = current - previous;
         if (diff === 0) return '';
-        
         const color = diff > 0 ? '#10b981' : '#ef4444';
         const sign = diff > 0 ? '+' : '';
-        
-        return `<span class="trend-indicator" style="color: ${color}">(${sign}${diff}%)</span>`;
+        return `<span class="trend-indicator" style="color:${color}">(${sign}${diff}%)</span>`;
     }
     
     function getTrendIndicatorAmount(current, previous) {
         if (previous === undefined) return '';
         const diff = current - previous;
         if (diff === 0) return '';
-        
         const color = diff > 0 ? '#10b981' : '#ef4444';
         const sign = diff > 0 ? '+' : '';
-        
-        return `<span class="trend-indicator" style="color: ${color}">(${sign}${diff.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})})</span>`;
+        return `<span class="trend-indicator" style="color:${color}">(${sign}${diff.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})})</span>`;
     }
-    
-    // Generate combined list HTML
-    let monthlyHTML = `
-        <div class="monthly-list-container">
-            <div class="monthly-list-main">
-                <div class="metric-group">
-                    <h4 class="metric-title">Total Dials</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.totalDials.toLocaleString('en-US')} ${getTrendIndicator(month.totalDials, monthlyMetrics[index + 1]?.totalDials)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">Worked on Ticket</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.workedOnTicket.toLocaleString('en-US')} ${getTrendIndicator(month.workedOnTicket, monthlyMetrics[index + 1]?.workedOnTicket)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">Connected</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.connected.toLocaleString('en-US')} ${getTrendIndicator(month.connected, monthlyMetrics[index + 1]?.connected)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">Debtor</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.debtor.toLocaleString('en-US')} ${getTrendIndicator(month.debtor, monthlyMetrics[index + 1]?.debtor)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">PTP Count</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.ptpCount.toLocaleString('en-US')} ${getTrendIndicator(month.ptpCount, monthlyMetrics[index + 1]?.ptpCount)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">PTP Amount</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.ptpAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${getTrendIndicatorAmount(month.ptpAmount, monthlyMetrics[index + 1]?.ptpAmount)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">Claim Paid Count</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.claimPaidCount.toLocaleString('en-US')} ${getTrendIndicator(month.claimPaidCount, monthlyMetrics[index + 1]?.claimPaidCount)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">Claim Paid Amount</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.claimPaidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${getTrendIndicatorAmount(month.claimPaidAmount, monthlyMetrics[index + 1]?.claimPaidAmount)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
+
+    const fmt2 = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    // Generate month cards — one card per month, metrics grouped by category
+    let monthlyHTML = `<div class="monthly-cards-container">`;
+
+    monthlyMetrics.forEach((month, index) => {
+        const prev = monthlyMetrics[index + 1];
+        monthlyHTML += `
+        <div class="monthly-card">
+            <div class="monthly-card-header">
+                <span class="monthly-card-title">${month.monthName}</span>
+                <span class="monthly-card-files">${results.filter(r => {
+                    if (!r.fileDate) return false;
+                    const d = new Date(r.fileDate);
+                    const mk = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+                    const sm = sortedMonths[index];
+                    return mk === sm;
+                }).length} file(s)</span>
             </div>
-            
-            <div class="monthly-list-sidebar">
-                <div class="metric-group">
-                    <h4 class="metric-title">Penetration</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.penetration}% ${getTrendIndicatorPercent(month.penetration, monthlyMetrics[index + 1]?.penetration)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
+            <div class="monthly-card-body">
+
+                <!-- General metrics -->
+                <div class="monthly-section general-section">
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Total Dials</span>
+                        <span class="monthly-metric-value">${month.totalDials.toLocaleString('en-US')} ${getTrendIndicator(month.totalDials, prev?.totalDials)}</span>
+                    </div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Worked on Ticket</span>
+                        <span class="monthly-metric-value">${month.workedOnTicket.toLocaleString('en-US')} ${getTrendIndicator(month.workedOnTicket, prev?.workedOnTicket)}</span>
+                    </div>
+                    ${month.totalBalance > 0 ? `
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Total Balance</span>
+                        <span class="monthly-metric-value balance-value">${fmt2(month.totalBalance)} ${getTrendIndicatorAmount(month.totalBalance, prev?.totalBalance)}</span>
+                    </div>` : ''}
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Connected</span>
+                        <span class="monthly-metric-value">${month.connected.toLocaleString('en-US')} ${getTrendIndicator(month.connected, prev?.connected)}</span>
+                    </div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">RPC</span>
+                        <span class="monthly-metric-value">${month.debtor.toLocaleString('en-US')} ${getTrendIndicator(month.debtor, prev?.debtor)}</span>
+                    </div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Penetration</span>
+                        <span class="monthly-metric-value">${month.penetration}% ${getTrendIndicatorPercent(month.penetration, prev?.penetration)}</span>
+                    </div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Connected Rate</span>
+                        <span class="monthly-metric-value">${month.connectedRate}% ${getTrendIndicatorPercent(month.connectedRate, prev?.connectedRate)}</span>
+                    </div>
+                    ${month.totalBalance > 0 ? `
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Collection Rate</span>
+                        <span class="monthly-metric-value collection-rate-value">${month.collectionRate}% ${getTrendIndicatorPercent(month.collectionRate, prev?.collectionRate)}</span>
+                    </div>` : ''}
                 </div>
-                
-                <div class="metric-group">
-                    <h4 class="metric-title">Connected Rate</h4>
-                    <ul class="metric-list">
-                        ${monthlyMetrics.map((month, index) => `
-                            <li>
-                                <span class="month-name">${month.monthName}</span>
-                                <span class="month-value">${month.connectedRate}% ${getTrendIndicatorPercent(month.connectedRate, monthlyMetrics[index + 1]?.connectedRate)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
+
+                <!-- PTP section with clear separator -->
+                <div class="monthly-section ptp-section">
+                    <div class="monthly-section-label ptp-section-label">📌 PTP</div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Total PTP Count</span>
+                        <span class="monthly-metric-value ptp-value">${month.ptpCount.toLocaleString('en-US')} ${getTrendIndicator(month.ptpCount, prev?.ptpCount)}</span>
+                    </div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Total PTP Amount</span>
+                        <span class="monthly-metric-value ptp-value">${fmt2(month.ptpAmount)} ${getTrendIndicatorAmount(month.ptpAmount, prev?.ptpAmount)}</span>
+                    </div>
+                    <div class="monthly-ptp-breakdown">
+                        <div class="monthly-ptp-sub predictive-sub">
+                            <div class="monthly-ptp-sub-label">Predictive</div>
+                            <div class="monthly-ptp-sub-row">
+                                <span>Count</span>
+                                <strong>${month.predictivePtpCount.toLocaleString('en-US')} ${getTrendIndicator(month.predictivePtpCount, prev?.predictivePtpCount)}</strong>
+                            </div>
+                            <div class="monthly-ptp-sub-row">
+                                <span>Amount</span>
+                                <strong>${fmt2(month.predictivePtpAmount)} ${getTrendIndicatorAmount(month.predictivePtpAmount, prev?.predictivePtpAmount)}</strong>
+                            </div>
+                        </div>
+                        <div class="monthly-ptp-divider">+</div>
+                        <div class="monthly-ptp-sub other-sub">
+                            <div class="monthly-ptp-sub-label">Other</div>
+                            <div class="monthly-ptp-sub-row">
+                                <span>Count</span>
+                                <strong>${month.otherPtpCount.toLocaleString('en-US')} ${getTrendIndicator(month.otherPtpCount, prev?.otherPtpCount)}</strong>
+                            </div>
+                            <div class="monthly-ptp-sub-row">
+                                <span>Amount</span>
+                                <strong>${fmt2(month.otherPtpAmount)} ${getTrendIndicatorAmount(month.otherPtpAmount, prev?.otherPtpAmount)}</strong>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- Claim Paid section -->
+                <div class="monthly-section claim-section">
+                    <div class="monthly-section-label claim-section-label">💳 Claim Paid</div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Claim Paid Count</span>
+                        <span class="monthly-metric-value claim-value">${month.claimPaidCount.toLocaleString('en-US')} ${getTrendIndicator(month.claimPaidCount, prev?.claimPaidCount)}</span>
+                    </div>
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Claim Paid Amount</span>
+                        <span class="monthly-metric-value claim-value">${fmt2(month.claimPaidAmount)} ${getTrendIndicatorAmount(month.claimPaidAmount, prev?.claimPaidAmount)}</span>
+                    </div>
+                </div>
+
             </div>
-        </div>
-    `;
-    
+        </div>`;
+    });
+
+    monthlyHTML += `</div>`;
     monthlyView.innerHTML = monthlyHTML;
 }

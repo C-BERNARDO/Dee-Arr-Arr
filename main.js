@@ -345,6 +345,8 @@ async function processExcelFile(file) {
                             agentData[agentName] = {
                                 ptpCount: 0,
                                 ptpAmount: 0,
+                                predictivePtpCount: 0,
+                                predictivePtpAmount: 0,
                                 claimPaidCount: 0,
                                 claimPaidAmount: 0
                             };
@@ -359,6 +361,8 @@ async function processExcelFile(file) {
                                 agentDataByDate[agentName][fileDate] = {
                                     ptpCount: 0,
                                     ptpAmount: 0,
+                                    predictivePtpCount: 0,
+                                    predictivePtpAmount: 0,
                                     claimPaidCount: 0,
                                     claimPaidAmount: 0
                                 };
@@ -388,10 +392,22 @@ async function processExcelFile(file) {
                                     agentData[agentName].ptpCount++;
                                     agentData[agentName].ptpAmount += ptpValue;
                                     
+                                    // Track predictive PTP for agent
+                                    if (remarkTypeStr === 'PREDICTIVE') {
+                                        agentData[agentName].predictivePtpCount++;
+                                        agentData[agentName].predictivePtpAmount += ptpValue;
+                                    }
+                                    
                                     // Add to date-based tracking
                                     if (fileDate && agentDataByDate[agentName] && agentDataByDate[agentName][fileDate]) {
                                         agentDataByDate[agentName][fileDate].ptpCount++;
                                         agentDataByDate[agentName][fileDate].ptpAmount += ptpValue;
+                                        
+                                        // Track predictive PTP for agent by date
+                                        if (remarkTypeStr === 'PREDICTIVE') {
+                                            agentDataByDate[agentName][fileDate].predictivePtpCount++;
+                                            agentDataByDate[agentName][fileDate].predictivePtpAmount += ptpValue;
+                                        }
                                     }
                                 }
                             }
@@ -618,11 +634,6 @@ function displayResults(results) {
     const totalBalance = validResults.reduce((sum, r) => sum + (r.totalBalance || 0), 0);
     const hasBalance = validResults.some(r => r.hasBalanceColumn);
     
-    // Calculate Collection Rate: (Claim Paid Amount / Total Balance) * 100
-    const collectionRate = totalBalance > 0 
-        ? Math.round((totalClaimPaidAmount / totalBalance) * 100) 
-        : 0;
-    
     // Calculate Penetration: DIALS / WORKED ON TICKET (whole number, no decimals)
     const penetration = uniqueAccountsAcrossFiles.length > 0 
         ? Math.round(totalBeforeDedup / uniqueAccountsAcrossFiles.length * 100) 
@@ -660,11 +671,6 @@ function displayResults(results) {
                         <div class="summary-stat-value">${uniqueAccountsAcrossFiles.length}</div>
                         <div class="summary-stat-label">Worked on Ticket</div>
                     </div>
-                    ${hasBalance ? `
-                    <div class="summary-stat balance-highlight">
-                        <div class="summary-stat-value">${totalBalance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-                        <div class="summary-stat-label">Total Balance</div>
-                    </div>` : ''}
                     <div class="summary-stat highlight">
                         <div class="summary-stat-value">${uniquePredictiveAcrossFiles.length}</div>
                         <div class="summary-stat-label">Connected</div>
@@ -689,6 +695,11 @@ function displayResults(results) {
                         <div class="summary-stat-value">${totalClaimPaidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         <div class="summary-stat-label">Claim Paid Amount</div>
                     </div>
+                    ${hasBalance ? `
+                    <div class="summary-stat balance-highlight">
+                        <div class="summary-stat-value">${totalBalance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                        <div class="summary-stat-label">Outstanding Balance</div>
+                    </div>` : ''}
                 </div>
                 <div class="summary-sidebar">
                     <div class="summary-stat-large penetration-highlight">
@@ -699,11 +710,6 @@ function displayResults(results) {
                         <div class="summary-stat-value-large">${connectedRate}%</div>
                         <div class="summary-stat-label-large">Connected Rate</div>
                     </div>
-                    ${hasBalance ? `
-                    <div class="summary-stat-large collection-rate-highlight">
-                        <div class="summary-stat-value-large">${collectionRate}%</div>
-                        <div class="summary-stat-label-large">Collection Rate</div>
-                    </div>` : ''}
                 </div>
             </div>
 
@@ -978,12 +984,16 @@ function showAgentCollection() {
                 allAgentsData[agentName] = {
                     ptpCount: 0,
                     ptpAmount: 0,
+                    predictivePtpCount: 0,
+                    predictivePtpAmount: 0,
                     claimPaidCount: 0,
                     claimPaidAmount: 0
                 };
             }
             allAgentsData[agentName].ptpCount += result.agentData[agentName].ptpCount;
             allAgentsData[agentName].ptpAmount += result.agentData[agentName].ptpAmount;
+            allAgentsData[agentName].predictivePtpCount += (result.agentData[agentName].predictivePtpCount || 0);
+            allAgentsData[agentName].predictivePtpAmount += (result.agentData[agentName].predictivePtpAmount || 0);
             allAgentsData[agentName].claimPaidCount += result.agentData[agentName].claimPaidCount;
             allAgentsData[agentName].claimPaidAmount += result.agentData[agentName].claimPaidAmount;
         });
@@ -999,6 +1009,8 @@ function showAgentCollection() {
                         allAgentsDataByDate[agentName][date] = {
                             ptpCount: 0,
                             ptpAmount: 0,
+                            predictivePtpCount: 0,
+                            predictivePtpAmount: 0,
                             claimPaidCount: 0,
                             claimPaidAmount: 0
                         };
@@ -1006,6 +1018,8 @@ function showAgentCollection() {
                     const dateData = result.agentDataByDate[agentName][date];
                     allAgentsDataByDate[agentName][date].ptpCount += dateData.ptpCount;
                     allAgentsDataByDate[agentName][date].ptpAmount += dateData.ptpAmount;
+                    allAgentsDataByDate[agentName][date].predictivePtpCount += (dateData.predictivePtpCount || 0);
+                    allAgentsDataByDate[agentName][date].predictivePtpAmount += (dateData.predictivePtpAmount || 0);
                     allAgentsDataByDate[agentName][date].claimPaidCount += dateData.claimPaidCount;
                     allAgentsDataByDate[agentName][date].claimPaidAmount += dateData.claimPaidAmount;
                     
@@ -1020,12 +1034,16 @@ function showAgentCollection() {
                         allAgentsDataByMonth[monthKey][agentName] = {
                             ptpCount: 0,
                             ptpAmount: 0,
+                            predictivePtpCount: 0,
+                            predictivePtpAmount: 0,
                             claimPaidCount: 0,
                             claimPaidAmount: 0
                         };
                     }
                     allAgentsDataByMonth[monthKey][agentName].ptpCount += dateData.ptpCount;
                     allAgentsDataByMonth[monthKey][agentName].ptpAmount += dateData.ptpAmount;
+                    allAgentsDataByMonth[monthKey][agentName].predictivePtpCount += (dateData.predictivePtpCount || 0);
+                    allAgentsDataByMonth[monthKey][agentName].predictivePtpAmount += (dateData.predictivePtpAmount || 0);
                     allAgentsDataByMonth[monthKey][agentName].claimPaidCount += dateData.claimPaidCount;
                     allAgentsDataByMonth[monthKey][agentName].claimPaidAmount += dateData.claimPaidAmount;
                 });
@@ -1062,6 +1080,35 @@ function showAgentCollection() {
     const agentNames = Object.keys(allAgentsData).sort();
     agentFilter.innerHTML = '<option value="all">All Agents</option>' + 
         agentNames.map(name => `<option value="${name}">${name}</option>`).join('');
+    
+    // Initialize predictive toggle state
+    window._agentPredictivePtpOn = false;
+    
+    // Setup toggle button
+    const toggleAgentPredictive = document.getElementById('toggleAgentPredictivePtp');
+    if (toggleAgentPredictive) {
+        toggleAgentPredictive.onclick = () => {
+            window._agentPredictivePtpOn = !window._agentPredictivePtpOn;
+            const btn = toggleAgentPredictive;
+            const selectedMonth = agentMonthFilter.value;
+            const selectedAgent = agentFilter.value;
+            
+            if (window._agentPredictivePtpOn) {
+                btn.classList.add('active');
+                btn.querySelector('.toggle-text').textContent = 'Hide Predictive PTP';
+            } else {
+                btn.classList.remove('active');
+                btn.querySelector('.toggle-text').textContent = 'Show Predictive PTP';
+            }
+            
+            // Re-render with current filter settings
+            if (selectedMonth === 'all') {
+                renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent);
+            } else {
+                agentMonthFilter.onchange();
+            }
+        };
+    }
     
     // Month filter change handler
     agentMonthFilter.onchange = () => {
@@ -1161,6 +1208,9 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
         const totalPtpAmount = Object.values(allAgentsData).reduce((sum, agent) => sum + agent.ptpAmount, 0);
         const totalClaimPaidCount = Object.values(allAgentsData).reduce((sum, agent) => sum + agent.claimPaidCount, 0);
         const totalClaimPaidAmount = Object.values(allAgentsData).reduce((sum, agent) => sum + agent.claimPaidAmount, 0);
+        const totalPredictivePtpCount = Object.values(allAgentsData).reduce((sum, agent) => sum + (agent.predictivePtpCount || 0), 0);
+        const totalPredictivePtpAmount = Object.values(allAgentsData).reduce((sum, agent) => sum + (agent.predictivePtpAmount || 0), 0);
+        const showPredictive = window._agentPredictivePtpOn || false;
         
         agentStatsContainer.innerHTML = `
             <div class="agent-summary-stats">
@@ -1181,6 +1231,31 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
                     <div class="agent-stat-value">${totalClaimPaidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                 </div>
             </div>
+            ${showPredictive ? `
+            <div class="agent-predictive-breakdown">
+                <div class="breakdown-header-small">
+                    <span class="breakdown-label-small">🔍 Predictive PTP Breakdown</span>
+                </div>
+                <div class="breakdown-grid-small">
+                    <div class="breakdown-item">
+                        <span class="breakdown-item-label">Total PTP Count:</span>
+                        <span class="breakdown-item-value">${totalPtpCount.toLocaleString('en-US')}</span>
+                        <span class="breakdown-arrow">→</span>
+                        <span class="breakdown-item-value predictive">${totalPredictivePtpCount.toLocaleString('en-US')} Predictive</span>
+                        <span class="breakdown-plus">+</span>
+                        <span class="breakdown-item-value other">${(totalPtpCount - totalPredictivePtpCount).toLocaleString('en-US')} Other</span>
+                    </div>
+                    <div class="breakdown-item">
+                        <span class="breakdown-item-label">Total PTP Amount:</span>
+                        <span class="breakdown-item-value">${totalPtpAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                        <span class="breakdown-arrow">→</span>
+                        <span class="breakdown-item-value predictive">${totalPredictivePtpAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Predictive</span>
+                        <span class="breakdown-plus">+</span>
+                        <span class="breakdown-item-value other">${(totalPtpAmount - totalPredictivePtpAmount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} Other</span>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
         `;
         
         // Show table of all agents
@@ -1193,7 +1268,9 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
                         <tr>
                             <th>Agent Name</th>
                             <th>PTP Count</th>
+                            ${showPredictive ? '<th class="col-predictive">↳ Predictive</th><th class="col-predictive">↳ Other</th>' : ''}
                             <th>PTP Amount</th>
+                            ${showPredictive ? '<th class="col-predictive">↳ Predictive</th><th class="col-predictive">↳ Other</th>' : ''}
                             <th>Claim Paid Count</th>
                             <th>Claim Paid Amount</th>
                         </tr>
@@ -1201,15 +1278,37 @@ function renderAgentData(allAgentsData, allAgentsDataByDate, selectedAgent) {
                     <tbody>
                         ${agentNames.map(name => {
                             const agent = allAgentsData[name];
-                            return `
-                                <tr>
-                                    <td>${name}</td>
-                                    <td>${agent.ptpCount.toLocaleString('en-US')}</td>
-                                    <td>${agent.ptpAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                                    <td>${agent.claimPaidCount.toLocaleString('en-US')}</td>
-                                    <td>${agent.claimPaidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                                </tr>
-                            `;
+                            const predPtpCount = agent.predictivePtpCount || 0;
+                            const otherPtpCount = agent.ptpCount - predPtpCount;
+                            const predPtpAmount = agent.predictivePtpAmount || 0;
+                            const otherPtpAmount = agent.ptpAmount - predPtpAmount;
+                            const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                            
+                            if (showPredictive) {
+                                return `
+                                    <tr>
+                                        <td>${name}</td>
+                                        <td>${agent.ptpCount.toLocaleString('en-US')}</td>
+                                        <td class="col-predictive">${predPtpCount.toLocaleString('en-US')}</td>
+                                        <td class="col-predictive">${otherPtpCount.toLocaleString('en-US')}</td>
+                                        <td>${fmt(agent.ptpAmount)}</td>
+                                        <td class="col-predictive">${fmt(predPtpAmount)}</td>
+                                        <td class="col-predictive">${fmt(otherPtpAmount)}</td>
+                                        <td>${agent.claimPaidCount.toLocaleString('en-US')}</td>
+                                        <td>${fmt(agent.claimPaidAmount)}</td>
+                                    </tr>
+                                `;
+                            } else {
+                                return `
+                                    <tr>
+                                        <td>${name}</td>
+                                        <td>${agent.ptpCount.toLocaleString('en-US')}</td>
+                                        <td>${fmt(agent.ptpAmount)}</td>
+                                        <td>${agent.claimPaidCount.toLocaleString('en-US')}</td>
+                                        <td>${fmt(agent.claimPaidAmount)}</td>
+                                    </tr>
+                                `;
+                            }
                         }).join('')}
                     </tbody>
                 </table>
@@ -1373,14 +1472,13 @@ let isMonthlyView = false;
 function renderResultsTable(results, showPredictive) {
     const thead = document.querySelector('#resultsTable thead tr');
     const hasBalance = results.some(r => r.hasBalanceColumn);
-    const balCol = hasBalance ? `<th class="col-balance">Total Balance</th>` : '';
-    const balColPred = hasBalance ? `<th class="col-balance">Total Balance</th>` : '';
+    const balCol = hasBalance ? `<th class="col-balance">Outstanding Balance</th>` : '';
+    const balColPred = hasBalance ? `<th class="col-balance">Outstanding Balance</th>` : '';
 
     if (showPredictive) {
         thead.innerHTML = `
             <th>Files</th>
             <th>Worked on Ticket</th>
-            ${balColPred}
             <th>Total Dials</th>
             <th>Connected</th>
             <th>RPC</th>
@@ -1392,12 +1490,12 @@ function renderResultsTable(results, showPredictive) {
             <th class="col-predictive">↳ Other</th>
             <th>Claim Paid Count</th>
             <th>Claim Paid Amount</th>
+            ${balColPred}
         `;
     } else {
         thead.innerHTML = `
             <th>Files</th>
             <th>Worked on Ticket</th>
-            ${balCol}
             <th>Total Dials</th>
             <th>Connected</th>
             <th>RPC</th>
@@ -1405,6 +1503,7 @@ function renderResultsTable(results, showPredictive) {
             <th>PTP Amount</th>
             <th>Claim Paid Count</th>
             <th>Claim Paid Amount</th>
+            ${balCol}
         `;
     }
 
@@ -1427,7 +1526,6 @@ function renderResultsTable(results, showPredictive) {
             return `<tr>
                 <td>${result.fileName}</td>
                 <td>${result.uniqueCount}</td>
-                ${balCell}
                 <td>${result.countBeforeDedup}</td>
                 <td>${result.predictiveCount}</td>
                 <td>${result.debtorCount}</td>
@@ -1439,12 +1537,12 @@ function renderResultsTable(results, showPredictive) {
                 <td class="col-predictive">${fmt(otherPtpAmount)}</td>
                 <td>${result.claimPaidCount}</td>
                 <td>${fmt(result.claimPaidTotalAmount)}</td>
+                ${balCell}
             </tr>`;
         } else {
             return `<tr>
                 <td>${result.fileName}</td>
                 <td>${result.uniqueCount}</td>
-                ${balCell}
                 <td>${result.countBeforeDedup}</td>
                 <td>${result.predictiveCount}</td>
                 <td>${result.debtorCount}</td>
@@ -1452,6 +1550,7 @@ function renderResultsTable(results, showPredictive) {
                 <td>${fmt(result.ptpTotalAmount)}</td>
                 <td>${result.claimPaidCount}</td>
                 <td>${fmt(result.claimPaidTotalAmount)}</td>
+                ${balCell}
             </tr>`;
         }
     }).join('');
@@ -1564,11 +1663,6 @@ function generateMonthlyBreakdown(results) {
             ? Math.round(uniquePredictive.length / uniqueAccounts.length * 100) 
             : 0;
         
-        // Calculate Collection Rate: (Claim Paid Amount / Total Balance) * 100
-        const collectionRate = data.totalBalance > 0
-            ? Math.round((data.claimPaidAmount / data.totalBalance) * 100)
-            : 0;
-        
         return {
             monthName: data.monthName,
             totalDials: data.totalDials,
@@ -1584,7 +1678,6 @@ function generateMonthlyBreakdown(results) {
             otherPtpAmount: data.ptpAmount - data.predictivePtpAmount,
             claimPaidCount: data.claimPaidCount,
             claimPaidAmount: data.claimPaidAmount,
-            collectionRate: collectionRate,
             penetration: penetration,
             connectedRate: connectedRate
         };
@@ -1607,6 +1700,17 @@ function generateMonthlyBreakdown(results) {
         const color = diff > 0 ? '#10b981' : '#ef4444';
         const sign = diff > 0 ? '+' : '';
         return `<span class="trend-indicator" style="color:${color}">(${sign}${diff}%)</span>`;
+    }
+    
+    function getTrendIndicatorPercentDecimal(current, previous) {
+        if (previous === undefined) return '';
+        const curr = parseFloat(current);
+        const prev = parseFloat(previous);
+        const diff = curr - prev;
+        if (Math.abs(diff) < 0.01) return ''; // No change if difference is less than 0.01%
+        const color = diff > 0 ? '#10b981' : '#ef4444';
+        const sign = diff > 0 ? '+' : '';
+        return `<span class="trend-indicator" style="color:${color}">(${sign}${diff.toFixed(2)}%)</span>`;
     }
     
     function getTrendIndicatorAmount(current, previous) {
@@ -1649,11 +1753,6 @@ function generateMonthlyBreakdown(results) {
                         <span class="monthly-metric-name">Worked on Ticket</span>
                         <span class="monthly-metric-value">${month.workedOnTicket.toLocaleString('en-US')} ${getTrendIndicator(month.workedOnTicket, prev?.workedOnTicket)}</span>
                     </div>
-                    ${month.totalBalance > 0 ? `
-                    <div class="monthly-metric-row">
-                        <span class="monthly-metric-name">Total Balance</span>
-                        <span class="monthly-metric-value balance-value">${fmt2(month.totalBalance)} ${getTrendIndicatorAmount(month.totalBalance, prev?.totalBalance)}</span>
-                    </div>` : ''}
                     <div class="monthly-metric-row">
                         <span class="monthly-metric-name">Connected</span>
                         <span class="monthly-metric-value">${month.connected.toLocaleString('en-US')} ${getTrendIndicator(month.connected, prev?.connected)}</span>
@@ -1670,11 +1769,6 @@ function generateMonthlyBreakdown(results) {
                         <span class="monthly-metric-name">Connected Rate</span>
                         <span class="monthly-metric-value">${month.connectedRate}% ${getTrendIndicatorPercent(month.connectedRate, prev?.connectedRate)}</span>
                     </div>
-                    ${month.totalBalance > 0 ? `
-                    <div class="monthly-metric-row">
-                        <span class="monthly-metric-name">Collection Rate</span>
-                        <span class="monthly-metric-value collection-rate-value">${month.collectionRate}% ${getTrendIndicatorPercent(month.collectionRate, prev?.collectionRate)}</span>
-                    </div>` : ''}
                 </div>
 
                 <!-- PTP section with clear separator -->
@@ -1726,6 +1820,11 @@ function generateMonthlyBreakdown(results) {
                         <span class="monthly-metric-name">Claim Paid Amount</span>
                         <span class="monthly-metric-value claim-value">${fmt2(month.claimPaidAmount)} ${getTrendIndicatorAmount(month.claimPaidAmount, prev?.claimPaidAmount)}</span>
                     </div>
+                    ${month.totalBalance > 0 ? `
+                    <div class="monthly-metric-row">
+                        <span class="monthly-metric-name">Outstanding Balance</span>
+                        <span class="monthly-metric-value balance-value">${fmt2(month.totalBalance)} ${getTrendIndicatorAmount(month.totalBalance, prev?.totalBalance)}</span>
+                    </div>` : ''}
                 </div>
 
             </div>

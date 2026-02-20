@@ -1893,3 +1893,76 @@ thead .col-broken-promise {
     color: #389e0d !important;
     font-weight: 700;
 }
+
+/* Agent Predictive Breakdown */
+.agent-predictive-breakdown {
+    margin-top: 16px;
+    border: 1.5px solid #ffd591;
+    border-radius: 6px;
+    background: #fff7e6;
+    overflow: hidden;
+}
+
+.breakdown-header-small {
+    padding: 8px 14px;
+    background: #ffe7ba;
+    border-bottom: 1px solid #ffd591;
+}
+
+.breakdown-label-small {
+    font-size: 13px;
+    font-weight: 600;
+    color: #d46b08;
+}
+
+.breakdown-grid-small {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.breakdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+
+.breakdown-item-label {
+    font-weight: 600;
+    color: rgba(0,0,0,0.65);
+    min-width: 140px;
+}
+
+.breakdown-item-value {
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-weight: 600;
+    color: rgba(0,0,0,0.85);
+}
+
+.breakdown-item-value.predictive {
+    color: #0050b3;
+    background: #e6f7ff;
+    padding: 2px 8px;
+    border-radius: 3px;
+}
+
+.breakdown-item-value.other {
+    color: #ad6800;
+    background: #fff7e6;
+    padding: 2px 8px;
+    border-radius: 3px;
+}
+
+.breakdown-arrow,
+.breakdown-plus {
+    font-weight: 700;
+    color: #bfbfbf;
+    font-size: 14px;
+}
+
+.agent-toggle-btn {
+    margin-right: 8px;
+}

@@ -32,7 +32,6 @@
                                 <tr>
                                     <th>Files</th>
                                     <th>Worked on Ticket</th>
-                                    <th>Total Balance</th>
                                     <th>Total Dials</th>
                                     <th>Connected</th>
                                     <th>RPC</th>
@@ -40,6 +39,7 @@
                                     <th>PTP Amount</th>
                                     <th>Claim Paid Count</th>
                                     <th>Claim Paid Amount</th>
+                                    <th>Outstanding Balance</th>
                                 </tr>
                             </thead>
                             <tbody id="resultsTableBody">
@@ -147,6 +147,10 @@
             <div class="modal-header">
                 <h2>Agent Collection Report</h2>
                 <div class="modal-controls">
+                    <button id="toggleAgentPredictivePtp" class="btn-toggle btn-toggle-ptp agent-toggle-btn">
+                        <span class="toggle-icon">🔍</span>
+                        <span class="toggle-text">Show Predictive PTP</span>
+                    </button>
                     <select id="agentMonthFilter" class="agent-filter">
                         <option value="all">All Months</option>
                     </select>

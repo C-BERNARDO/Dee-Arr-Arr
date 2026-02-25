@@ -58,7 +58,7 @@ uploadArea.addEventListener('drop', (e) => {
     e.preventDefault();
     uploadArea.classList.remove('dragover');
     const files = Array.from(e.dataTransfer.files).filter(file => 
-        file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+        file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')
     );
     addFiles(files);
 });
@@ -260,11 +260,21 @@ async function processFiles() {
 async function processExcelFile(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
+        const isCsv = file.name.toLowerCase().endsWith('.csv');
         
         reader.onload = (e) => {
             try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
+                let workbook;
+                
+                if (isCsv) {
+                    // For CSV files, read as text
+                    const text = e.target.result;
+                    workbook = XLSX.read(text, { type: 'string' });
+                } else {
+                    // For Excel files, read as array buffer
+                    const data = new Uint8Array(e.target.result);
+                    workbook = XLSX.read(data, { type: 'array' });
+                }
                 
                 // Process first sheet
                 const firstSheetName = workbook.SheetNames[0];
@@ -533,7 +543,13 @@ async function processExcelFile(file) {
         };
         
         reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsArrayBuffer(file);
+        
+        // Read CSV as text, Excel as array buffer
+        if (isCsv) {
+            reader.readAsText(file);
+        } else {
+            reader.readAsArrayBuffer(file);
+        }
     });
 }
 
@@ -551,7 +567,7 @@ function findColumn(data, headerName) {
 
 function extractDateFromFilename(filename) {
     // Remove file extension first
-    const nameWithoutExt = filename.replace(/\.(xlsx|xls)$/i, '');
+    const nameWithoutExt = filename.replace(/\.(xlsx|xls|csv)$/i, '');
     
     // Pattern to match DD-MMM-YY at the end of filename
     // Example: 01-Feb-26, 15-Mar-25, etc.
